@@ -72,8 +72,8 @@ function ws_ona_recent_additions_list($window_name, $form='') {
     <tr onMouseOver="this.className='row-highlight';" onMouseOut="this.className='row-normal';">
         <td align=right class="list-row">SUBNET:</td>
         <td class="list-row">{$subnet['name']}</td>
-        <td class="list-row">{$subnet['ip_addr']}</td>
-        <td class="list-row">/{$subnet['ip_mask']}</td>
+        <td class="list-row">{$subnet['ip_addr']}/{$subnet['ip_mask']}</td>
+        <td class="list-row">&nbsp;</td>
         <td>&nbsp;&nbsp;&nbsp;&nbsp;</td>
     </tr>
 EOL;
@@ -110,13 +110,46 @@ EOL;
     // Get recent dns records
     list ($status, $rows, $dnsrecords) = db_get_records($onadb,'dns','id > 0',"id DESC", 5, 0);
     foreach ($dnsrecords as $dns) {
-  //list($status, $rows, $dnsrecord) = ona_get_dns_record(array('id' => $host['primary_dns_id']));
-    list($status, $rows, $int) = ona_get_interface_record(array('id' => $dns['interface_id']));
-    list($status, $rows, $domain) = ona_get_domain_record(array('id' => $dns['domain_id']));
+      //list($status, $rows, $dnsrecord) = ona_get_dns_record(array('id' => $host['primary_dns_id']));
+      list($status, $rows, $int) = ona_get_interface_record(array('id' => $dns['interface_id']));
+      list($status, $rows, $domain) = ona_get_domain_record(array('id' => $dns['domain_id']));
+      
+      $dns['ip_addr'] = ip_mangle($int['ip_addr'], 'dotted');
 
-    $dns['fqdn'] = $dns['name'].'.'.$domain['fqdn'];
+      // Make PTR look better
+      if ($dns['type'] == 'PTR') {
+        list($status, $rows, $pointsto) = ona_get_dns_record(array('id' => $dns['dns_id']), '');
+        list($status, $rows, $pdomain)  = ona_get_domain_record(array('id' => $dns['domain_id']), '');
 
-        $dns['ip_addr'] = ip_mangle($int['ip_addr'], 'dotted');
+        // Flip the IP address
+        $dns['name'] = ip_mangle($dns['ip_addr'],'flip');
+        $dns['domain'] = $pdomain['name'];
+
+        if ($pdomain['parent_id']) {
+            list ($status, $rows, $parent) = ona_get_domain_record(array('id' => $pdomain['parent_id']));
+            $parent['name'] = ona_build_domain_name($parent['id']);
+            $dns['domain'] = $pdomain['name'].'.'.$parent['name'];
+            unset($parent['name']);
+        }
+
+        // strip down the IP to just the "host" part as it relates to the domain its in
+        if (strstr($dns['domain'],'in-addr.arpa')) {
+            $domain_part = preg_replace("/.in-addr.arpa$/", '', $dns['domain']);
+        } else {
+            $domain_part = preg_replace("/.ip6.arpa$/", '', $dns['domain']);
+        }
+        $dns['fqdn'] = preg_replace("/${domain_part}$/", '', $dns['name']).$dns['domain'];
+        $dns['ip_addr'] = $pointsto['fqdn'];
+      }
+      elseif ($dns['type'] == 'CNAME') {
+        list($status, $rows, $pointsto) = ona_get_dns_record(array('id' => $dns['dns_id']), '');
+        $dns['ip_addr'] = $pointsto['fqdn'];
+        $dns['fqdn'] = $dns['name'].'.'.$domain['fqdn'];
+    
+      } else {
+        $dns['fqdn'] = $dns['name'].'.'.$domain['fqdn'];
+      }
+
         $htmllines .= <<<EOL
     <tr onMouseOver="this.className='row-highlight';" onMouseOut="this.className='row-normal';">
         <td align=right class="list-row">DNS:</td>

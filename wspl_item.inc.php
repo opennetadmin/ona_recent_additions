@@ -71,7 +71,12 @@ function ws_ona_recent_additions_list($window_name, $form='') {
         $htmllines .= <<<EOL
     <tr onMouseOver="this.className='row-highlight';" onMouseOut="this.className='row-normal';">
         <td align=right class="list-row">SUBNET:</td>
-        <td class="list-row">{$subnet['name']}</td>
+        <td class="list-row">
+          <a title="View subnet. ID: {$subnet['id']}"
+             class="nav"
+             onClick="xajax_window_submit('work_space', 'xajax_window_submit(\'display_subnet\', \'subnet_id=>{$subnet['id']}\', \'display\')');"
+          >{$subnet['name']}</a>
+        </td>
         <td class="list-row">{$subnet['ip_addr']}/{$subnet['ip_mask']}</td>
         <td class="list-row">&nbsp;</td>
         <td>&nbsp;&nbsp;&nbsp;&nbsp;</td>
@@ -84,6 +89,7 @@ EOL;
     list ($status, $rows, $hosts) = db_get_records($onadb,'hosts','id > 0',"id DESC", 5, 0);
     foreach ($hosts as $host) {
       list($status, $rows, $dnsrecord) = ona_get_dns_record(array('id' => $host['primary_dns_id']));
+      list($status, $rows, $int) = ona_get_interface_record(array('id' => $dnsrecord['interface_id']));
       list($status, $rows, $dev) = ona_get_device_record(array('id' => $host['device_id']));
       list($status, $rows, $devtype) = ona_get_device_type_record(array('id' => $dev['device_type_id']));
       if ($devtype['id']) {
@@ -93,13 +99,22 @@ EOL;
          $devtype_desc = "{$manu['name']}, {$model['name']} ({$role['name']})";
       }
 
-        $host['ip_addr'] = ip_mangle($host['ip_addr'], 'dotted');
+        $host['ip_addr'] = ip_mangle($int['ip_addr'], 'dotted');
         $htmllines .= <<<EOL
     <tr onMouseOver="this.className='row-highlight';" onMouseOut="this.className='row-normal';">
         <td align=right class="list-row">HOST:</td>
-        <td class="list-row">{$dnsrecord['fqdn']}</td>
+        <td class="list-row">
+          <a title="View host. ID: {$host['id']}"
+             class="nav"
+             onClick="xajax_window_submit('work_space', 'xajax_window_submit(\'display_host\', \'host_id=>{$host['id']}\', \'display\')');"
+          >{$dnsrecord['name']}</a
+          >.<a title="View domain. ID: {$dnsrecord['domain_id']}"
+               class="domain"
+               onClick="xajax_window_submit('work_space', 'xajax_window_submit(\'display_domain\', \'domain_id=>{$dnsrecord['domain_id']}\', \'display\')');"
+          >{$dnsrecord['domain_fqdn']}</a>
+        </td>
+        <td class="list-row">{$host['ip_addr']}</td>
         <td class="list-row">{$devtype_desc}&nbsp;</td>
-        <td class="list-row">&nbsp;</td>
         <td>&nbsp;&nbsp;&nbsp;&nbsp;</td>
     </tr>
 EOL;
@@ -113,11 +128,21 @@ EOL;
       //list($status, $rows, $dnsrecord) = ona_get_dns_record(array('id' => $host['primary_dns_id']));
       list($status, $rows, $int) = ona_get_interface_record(array('id' => $dns['interface_id']));
       list($status, $rows, $domain) = ona_get_domain_record(array('id' => $dns['domain_id']));
-      
+
       $dns['ip_addr'] = ip_mangle($int['ip_addr'], 'dotted');
 
+      if ($dns['type'] == 'SRV') {
+        list($status, $rows, $pointsto) = ona_get_dns_record(array('id' => $dns['dns_id']), '');
+        $dns['type'] = $dns['type'].'('.$dns['srv_port'].')';
+        $dns['fqdn'] = $dns['name'].'.'.$domain['fqdn'];
+        $dns['ip_addr'] = $pointsto['fqdn'];
+      }
+      elseif ($dns['type'] == 'TXT') {
+        $dns['fqdn'] = $dns['name'].'.'.$domain['fqdn'];
+        $dns['ip_addr'] = $dns['txt'];
+      }
       // Make PTR look better
-      if ($dns['type'] == 'PTR') {
+      elseif ($dns['type'] == 'PTR') {
         list($status, $rows, $pointsto) = ona_get_dns_record(array('id' => $dns['dns_id']), '');
         list($status, $rows, $pdomain)  = ona_get_domain_record(array('id' => $dns['domain_id']), '');
 
@@ -145,7 +170,7 @@ EOL;
         list($status, $rows, $pointsto) = ona_get_dns_record(array('id' => $dns['dns_id']), '');
         $dns['ip_addr'] = $pointsto['fqdn'];
         $dns['fqdn'] = $dns['name'].'.'.$domain['fqdn'];
-    
+
       } else {
         $dns['fqdn'] = $dns['name'].'.'.$domain['fqdn'];
       }
@@ -155,7 +180,12 @@ EOL;
         <td align=right class="list-row">DNS:</td>
         <td class="list-row">{$dns['fqdn']}&nbsp;</td>
         <td class="list-row">{$dns['type']}</td>
-        <td class="list-row">{$dns['ip_addr']}&nbsp;</td>
+        <td class="list-row">
+          <a title="View host. ID: {$int['host_id']}"
+             class="nav"
+             onClick="xajax_window_submit('work_space', 'xajax_window_submit(\'display_host\', \'host_id=>{$int['host_id']}\', \'display\')');"
+          >{$dns['ip_addr']}</a>
+        </td>
         <td>&nbsp;&nbsp;&nbsp;&nbsp;</td>
     </tr>
 EOL;
@@ -175,9 +205,9 @@ EOL;
 
     // Insert the new table into the window
     $response = new xajaxResponse();
-    $response->addAssign('ona_recent_additions', "innerHTML", $html);
-    $response->addScript($js);
-    return($response->getXML());
+    $response->assign('ona_recent_additions', "innerHTML", $html);
+    $response->script($js);
+    return($response);
 }
 
 
